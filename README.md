@@ -256,6 +256,20 @@ Settings / Preferences -> Plugins -> Install Plugin from Disk...
 
 选择 `build/distributions/` 下生成的插件压缩包，安装后重启 IDE。
 
+## 自动更新
+
+如果不想每次手动下载安装包，可以在 Rider 或其他 JetBrains IDE 中添加自定义插件仓库：
+
+1. 打开 `Settings / Preferences -> Plugins`。
+2. 点击齿轮按钮，选择 `Manage Plugin Repositories...`。
+3. 点击 `+`，添加以下地址：
+
+```text
+https://raw.githubusercontent.com/whisper3zzz/File-Description-Jetbrains-Plugin/main/updatePlugins.xml
+```
+
+4. 点击 `OK`。之后发布新版本时，IDE 会从该插件仓库检查更新。
+
 ## GitHub Actions 打包
 
 仓库已配置自动打包流程：
@@ -263,7 +277,7 @@ Settings / Preferences -> Plugins -> Install Plugin from Disk...
 - push 到 `main`：编译、运行测试、校验插件配置并执行 `buildPlugin`。
 - pull request 到 `main`：执行同样的测试、编译和打包校验。
 - 手动触发 `Build Plugin` workflow：生成插件压缩包。
-- 推送 `v*` 标签：生成插件压缩包，并自动创建 GitHub Release。
+- 推送 `v*` 标签：生成插件压缩包，自动创建 GitHub Release，并更新 `updatePlugins.xml`。
 
 打包产物会上传到 workflow artifact，文件来自：
 
@@ -274,9 +288,12 @@ build/distributions/*.zip
 发布新版本示例：
 
 ```powershell
+# 先确保 gradle.properties 里的 pluginVersion 是 1.0.0
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+tag 版本必须和 `gradle.properties` 中的 `pluginVersion` 一致。例如 `pluginVersion = 1.0.0` 对应 `v1.0.0`。
 
 ## 仓库结构
 

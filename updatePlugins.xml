@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+  <plugin id="com.whispersong.jetbrains.file_description_plugin_v2" url="https://github.com/whisper3zzz/File-Description-Jetbrains-Plugin/releases/download/v1.0.0/FileDescription-1.0.0.zip" version="1.0.0">
+    <name>File Description</name>
+    <description>
+    <![CDATA[
+      Automatically add and update file header comments.
+      <br>
+      See <a href="https://github.com/whisper3zzz/File-Description-Jetbrains-Plugin/releases/tag/v1.0.0">release notes</a>.
+    ]]>
+    </description>
+  </plugin>
+</plugins>
