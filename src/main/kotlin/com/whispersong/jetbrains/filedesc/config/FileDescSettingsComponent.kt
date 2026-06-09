@@ -1,6 +1,7 @@
 package com.whispersong.jetbrains.filedesc.config
 
 import com.intellij.openapi.options.ConfigurationException
+import com.intellij.openapi.ui.Messages
 import com.intellij.ui.TitledSeparator
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
@@ -11,7 +12,10 @@ import com.intellij.util.ui.UIUtil
 import com.whispersong.jetbrains.filedesc.utils.VcsDetector
 import java.awt.FlowLayout
 import java.awt.Font
+import java.io.File
+import java.nio.file.Files
 import javax.swing.JButton
+import javax.swing.JFileChooser
 import javax.swing.JPanel
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
@@ -28,6 +32,12 @@ class FileDescSettingsComponent {
     private val customHeaderComment = JBTextArea(state.customHeaderComment)
     private val manualAuthor = JBTextArea(state.manualAuthor)
     private val preview = JBTextArea()
+    private val importConfigBtn = JButton("导入 .fileDescription.json").apply {
+        addActionListener { importProjectConfig() }
+    }
+    private val exportConfigBtn = JButton("导出 .fileDescription.json").apply {
+        addActionListener { exportProjectConfig() }
+    }
 
     private val refreshVcsBtn = JButton("刷新 VCS 缓存").apply {
         addActionListener {
@@ -74,6 +84,11 @@ class FileDescSettingsComponent {
         add(vcsStatus)
     }
 
+    private val configButtonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
+        add(importConfigBtn)
+        add(exportConfigBtn)
+    }
+
     val panel: JPanel = FormBuilder.createFormBuilder()
         .addComponent(TitledSeparator("功能配置"))
         .addComponent(createFileAdd)
@@ -89,6 +104,7 @@ class FileDescSettingsComponent {
         .addComponent(TitledSeparator("VCS 信息"))
         .addComponent(vcsButtonPanel)
         .addComponent(TitledSeparator("头部注释配置"))
+        .addComponent(configButtonPanel)
         .addLabeledComponentFillVertically("自定义头部注释（JSON）", customHeaderComment)
         .addComponent(makeDescription("JSON 格式，兼容 koroFileHeader 配置。使用 \"auto:vcs\" 自动从版本控制获取用户名"))
         .addLabeledComponentFillVertically("模板预览", preview)
@@ -169,5 +185,66 @@ class FileDescSettingsComponent {
             manualAuthor = manualAuthor.text,
             compactComment = compactComment.isSelected
         )
+    }
+
+    private fun importProjectConfig() {
+        val chooser = JFileChooser().apply {
+            dialogTitle = "导入 .fileDescription.json"
+            fileSelectionMode = JFileChooser.FILES_ONLY
+            selectedFile = File(".fileDescription.json")
+        }
+        if (chooser.showOpenDialog(panel) != JFileChooser.APPROVE_OPTION) return
+
+        try {
+            val imported = SettingsConfigIO.importProjectConfig(Files.readString(chooser.selectedFile.toPath()))
+            customHeaderComment.text = imported.customHeaderComment
+            ignorePaths.text = imported.ignorePaths
+            timeFormat.text = imported.timeFormat
+            compactComment.isSelected = imported.compactComment
+            updatePreview()
+            ProjectConfig.clearCache()
+            Messages.showInfoMessage(panel, "项目配置已导入到当前设置页。点击 Apply 保存。", "File Description")
+        } catch (e: Exception) {
+            Messages.showErrorDialog(panel, "导入失败：${e.message ?: "配置文件格式不正确"}", "File Description")
+        }
+    }
+
+    private fun exportProjectConfig() {
+        val content = try {
+            SettingsConfigIO.exportProjectConfig(
+                customHeaderComment = customHeaderComment.text,
+                ignorePaths = ignorePaths.text,
+                timeFormat = timeFormat.text,
+                compactComment = compactComment.isSelected
+            )
+        } catch (e: Exception) {
+            Messages.showErrorDialog(panel, "导出失败：${e.message ?: "当前配置不正确"}", "File Description")
+            return
+        }
+
+        val chooser = JFileChooser().apply {
+            dialogTitle = "导出 .fileDescription.json"
+            fileSelectionMode = JFileChooser.FILES_ONLY
+            selectedFile = File(".fileDescription.json")
+        }
+        if (chooser.showSaveDialog(panel) != JFileChooser.APPROVE_OPTION) return
+
+        val target = chooser.selectedFile.toPath()
+        if (Files.exists(target)) {
+            val answer = Messages.showYesNoDialog(
+                panel,
+                "文件已存在，是否覆盖？\n$target",
+                "File Description",
+                Messages.getQuestionIcon()
+            )
+            if (answer != Messages.YES) return
+        }
+
+        try {
+            Files.writeString(target, content)
+            Messages.showInfoMessage(panel, "项目配置已导出到：\n$target", "File Description")
+        } catch (e: Exception) {
+            Messages.showErrorDialog(panel, "导出失败：${e.message ?: "无法写入文件"}", "File Description")
+        }
     }
 }

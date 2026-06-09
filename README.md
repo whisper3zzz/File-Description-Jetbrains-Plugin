@@ -87,6 +87,8 @@ Settings / Preferences -> Tools -> File Description
 | 手动指定作者 | 非空时覆盖 VCS 自动检测用户 |
 | 自定义头部注释 | JSON 格式，定义要生成的头部字段 |
 | 模板预览 | 使用示例文件和示例用户信息预览当前模板输出 |
+| 导入 `.fileDescription.json` | 将项目级配置导入到当前设置页 |
+| 导出 `.fileDescription.json` | 将当前头部模板、忽略路径、时间格式和 compact 模式导出为项目级配置 |
 | 刷新 VCS 缓存 | 清除 VCS 和项目配置缓存，重新检测用户信息 |
 
 默认忽略路径：
