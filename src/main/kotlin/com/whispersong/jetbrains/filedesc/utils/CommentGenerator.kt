@@ -11,12 +11,29 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 
 object CommentGenerator {
 
     private val FIELD_ORDER = listOf(
         "Copyright", "Author", "Date", "LastEditors", "LastEditTime", "FilePath", "Description"
     )
+    private const val MAX_HEADER_SCAN_LENGTH = 64 * 1024
+    private const val INTERNAL_UPDATE_SUPPRESS_MS = 1_000L
+    private val activeInternalUpdates = ConcurrentHashMap.newKeySet<String>()
+    private val recentInternalUpdates = ConcurrentHashMap<String, Long>()
+
+    fun isInternalUpdate(file: VirtualFile): Boolean {
+        val path = file.path
+        if (activeInternalUpdates.contains(path)) return true
+
+        val lastUpdate = recentInternalUpdates[path] ?: return false
+        val isRecent = System.currentTimeMillis() - lastUpdate < INTERNAL_UPDATE_SUPPRESS_MS
+        if (!isRecent) {
+            recentInternalUpdates.remove(path, lastUpdate)
+        }
+        return isRecent
+    }
 
     fun generateHeaderComment(file: VirtualFile, project: Project?): String {
         val style = FileUtil.getCommentStyle(file) ?: return ""
@@ -33,7 +50,7 @@ object CommentGenerator {
         val filePath = FileUtil.getRelativePath(file)
         val at = style.atSymbol
 
-        var commentContent = ""
+        val commentContent = StringBuilder()
 
         // 1. Copyright — always first, resolve placeholders
         val copyrightValue = if (!copyrightField.isNullOrEmpty()) {
@@ -43,7 +60,7 @@ object CommentGenerator {
             resolvePlaceholders(raw, file)
         } else ""
         if (copyrightValue.isNotEmpty()) {
-            commentContent += "${style.linePrefix}${at}Copyright: $copyrightValue\n"
+            commentContent.append("${style.linePrefix}${at}Copyright: $copyrightValue\n")
         }
 
         // 2. Standard fields in fixed order
@@ -53,9 +70,9 @@ object CommentGenerator {
             val strValue = (config[key] as? JsonPrimitive)?.content ?: continue
 
             val line = when (key) {
-                "Author" -> "${style.linePrefix}${at}Author: ${resolveValue(strValue, file)}\n"
+                "Author" -> "${style.linePrefix}${at}Author: ${resolveValue(strValue, file).orEmpty()}\n"
                 "Date" -> "${style.linePrefix}${at}Date: $createDate\n"
-                "LastEditors" -> "${style.linePrefix}${at}LastEditors: ${resolveValue(strValue, file)}\n"
+                "LastEditors" -> "${style.linePrefix}${at}LastEditors: ${resolveValue(strValue, file).orEmpty()}\n"
                 "LastEditTime" -> "${style.linePrefix}${at}LastEditTime: $curDate\n"
                 "FilePath" -> {
                     val formattedPath = "\\${filePath.replace("/", "\\")}"
@@ -64,7 +81,7 @@ object CommentGenerator {
                 "Description" -> "${style.linePrefix}${at}Description: $strValue\n"
                 else -> continue
             }
-            commentContent += line
+            commentContent.append(line)
         }
 
         // 3. Custom uppercase fields not in FIELD_ORDER
@@ -73,14 +90,14 @@ object CommentGenerator {
             if (key.firstOrNull()?.isUpperCase() != true) {
                 val strValue = (value as? JsonPrimitive)?.content ?: continue
                 if (strValue.isNotEmpty()) {
-                    commentContent += "${style.linePrefix}$strValue\n"
+                    commentContent.append("${style.linePrefix}$strValue\n")
                 }
                 continue
             }
             val strValue = (value as? JsonPrimitive)?.content ?: continue
-            val resolved = resolveValue(strValue, file)
+            val resolved = resolveValue(strValue, file).orEmpty()
             if (resolved.isNotEmpty()) {
-                commentContent += "${style.linePrefix}${at}$key: $resolved\n"
+                commentContent.append("${style.linePrefix}${at}$key: $resolved\n")
             }
         }
 
@@ -92,7 +109,7 @@ object CommentGenerator {
     }
 
     fun checkAndAddHeader(document: Document, file: VirtualFile, project: Project?) {
-        val content = document.text
+        val content = getHeaderScanText(document)
         if (findHeaderRange(file, content) != null) return
 
         val header = generateHeaderComment(file, project)
@@ -109,7 +126,7 @@ object CommentGenerator {
     }
 
     fun updateHeader(document: Document, file: VirtualFile, project: Project?) {
-        val content = document.text
+        val content = getHeaderScanText(document)
         val style = FileUtil.getCommentStyle(file) ?: return
         val headerRange = findHeaderRange(file, content) ?: return
 
@@ -123,8 +140,10 @@ object CommentGenerator {
         // Update LastEditors
         if (config.containsKey("LastEditors")) {
             val value = (config["LastEditors"] as? JsonPrimitive)?.content ?: ""
-            val resolved = resolveValue(value, file)
-            newHeader = replaceHeaderField(newHeader, style, "LastEditors", resolved)
+            val resolved = resolveValue(value, file, cacheOnly = true)
+            if (resolved != null) {
+                newHeader = replaceHeaderField(newHeader, style, "LastEditors", resolved)
+            }
         }
 
         // Update LastEditTime
@@ -247,18 +266,40 @@ object CommentGenerator {
         }
     }
 
-    private fun resolveValue(value: String, file: VirtualFile): String {
+    private fun getHeaderScanText(document: Document): String {
+        val length = minOf(document.textLength, MAX_HEADER_SCAN_LENGTH)
+        return document.getText(TextRange(0, length))
+    }
+
+    private fun resolveValue(value: String, file: VirtualFile, cacheOnly: Boolean = false): String? {
         return when {
             value == "auto:vcs" -> {
                 val manual = FileDescSettings.getInstance().manualAuthor
                 if (manual.isNotEmpty()) return manual
 
                 val projectDir = FileUtil.getProjectDir(file)
-                val vcs = if (projectDir != null) VcsDetector.detectVcs(projectDir) else VcsType.NONE
-                VcsDetector.getVcsUsernameEmail(vcs, projectDir) ?: VcsDetector.getVcsUsername(vcs, projectDir) ?: "unknown"
+                if (cacheOnly) {
+                    if (projectDir == null) return VcsDetector.getVcsUsername(VcsType.NONE, null)
+
+                    val vcs = VcsDetector.getCachedVcs(projectDir)
+                    if (vcs == null) {
+                        VcsDetector.warmUp(projectDir)
+                        return null
+                    }
+
+                    val cached = VcsDetector.getCachedVcsUsernameEmail(vcs, projectDir)
+                        ?: VcsDetector.getCachedVcsUsername(vcs, projectDir)
+                    if (cached == null) {
+                        VcsDetector.warmUp(projectDir)
+                    }
+                    cached
+                } else {
+                    val vcs = if (projectDir != null) VcsDetector.detectVcs(projectDir) else VcsType.NONE
+                    VcsDetector.getVcsUsernameEmail(vcs, projectDir) ?: VcsDetector.getVcsUsername(vcs, projectDir) ?: "unknown"
+                }
             }
             value.startsWith("git ") || value.startsWith("git\t") -> {
-                executeCommand(value) ?: ""
+                if (cacheOnly) null else executeCommand(value, file).orEmpty()
             }
             value == "" -> ""
             else -> resolvePlaceholders(value, file)
@@ -269,11 +310,22 @@ object CommentGenerator {
         var result = text
         val year = SimpleDateFormat("yyyy").format(Date())
 
-        // Resolve VCS info for placeholders
-        val projectDir = FileUtil.getProjectDir(file)
-        val vcs = if (projectDir != null) VcsDetector.detectVcs(projectDir) else VcsType.NONE
-        val vcsName = VcsDetector.getVcsUsername(vcs, projectDir) ?: ""
-        val vcsNameEmail = VcsDetector.getVcsUsernameEmail(vcs, projectDir) ?: ""
+        val needsGitName = result.contains("\${git_name}") ||
+                result.contains("\${git_email}") ||
+                result.contains("\${git_name_email}")
+        val needsGitNameEmail = result.contains("\${git_email}") ||
+                result.contains("\${git_name_email}")
+
+        var vcsName = ""
+        var vcsNameEmail = ""
+        if (needsGitName) {
+            val projectDir = FileUtil.getProjectDir(file)
+            val vcs = if (projectDir != null) VcsDetector.detectVcs(projectDir) else VcsType.NONE
+            vcsName = VcsDetector.getVcsUsername(vcs, projectDir) ?: ""
+            if (needsGitNameEmail) {
+                vcsNameEmail = VcsDetector.getVcsUsernameEmail(vcs, projectDir) ?: ""
+            }
+        }
         val email = vcsNameEmail.removePrefix(vcsName).trim()
 
         result = result.replace("\${now_year}", year)
@@ -283,26 +335,19 @@ object CommentGenerator {
         return result
     }
 
-    private fun executeCommand(command: String): String? {
+    private fun executeCommand(command: String, file: VirtualFile): String? {
         val parts = command.trim().split(Regex("\\s+"))
         if (parts.isEmpty()) return null
-        return try {
-            val processBuilder = ProcessBuilder(parts)
-            processBuilder.redirectErrorStream(true)
-            val process = processBuilder.start()
-            val output = process.inputStream.bufferedReader().readText().trim()
-            process.waitFor()
-            if (output.isEmpty() || process.exitValue() != 0) null else output
-        } catch (e: Exception) {
-            null
-        }
+        return VcsDetector.runCommand(FileUtil.getProjectDir(file), parts)
     }
 
     private fun insertFileContent(file: VirtualFile, document: Document, offset: Int, content: String) {
         val project = FileUtil.findProjectForFile(file) ?: return
         WriteCommandAction.runWriteCommandAction(project) {
             try {
-                document.insertString(offset, content)
+                runInternalUpdate(file) {
+                    document.insertString(offset, content)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -313,10 +358,23 @@ object CommentGenerator {
         val project = FileUtil.findProjectForFile(file) ?: return
         WriteCommandAction.runWriteCommandAction(project) {
             try {
-                document.replaceString(range.startOffset, range.endOffset, content)
+                runInternalUpdate(file) {
+                    document.replaceString(range.startOffset, range.endOffset, content)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    private fun runInternalUpdate(file: VirtualFile, action: () -> Unit) {
+        val path = file.path
+        activeInternalUpdates.add(path)
+        try {
+            action()
+        } finally {
+            recentInternalUpdates[path] = System.currentTimeMillis()
+            activeInternalUpdates.remove(path)
         }
     }
 }

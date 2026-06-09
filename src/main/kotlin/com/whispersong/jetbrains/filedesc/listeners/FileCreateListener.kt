@@ -20,11 +20,11 @@ class FileCreateListener : BulkFileListener {
                 val state = FileDescSettings.getInstance()
                 if (!state.createFileAdd) continue
 
+                if (!FileUtil.isSupportedFile(file)) continue
+
                 val project = FileUtil.findProjectForFile(file)
                 val ignorePaths = ProjectConfig.getMergedIgnorePaths(project)
                 if (FileUtil.checkIsFileIgnored(file, ignorePaths)) continue
-
-                if (!FileUtil.isSupportedFile(file)) continue
 
                 val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
                 ApplicationManager.getApplication().invokeLater {

@@ -1,6 +1,5 @@
 package com.whispersong.jetbrains.filedesc.listeners
 
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -46,10 +45,7 @@ class FileSaveListener : FileDocumentManagerListener {
                 val ignorePaths = ProjectConfig.getMergedIgnorePaths(project)
                 if (FileUtil.checkIsFileIgnored(file, ignorePaths)) continue
 
-                // 未修改文档的 header 更新需要写权限
-                WriteCommandAction.runWriteCommandAction(project) {
-                    CommentGenerator.updateHeader(document, file, project)
-                }
+                CommentGenerator.updateHeader(document, file, project)
             }
         }
     }

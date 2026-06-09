@@ -1,7 +1,6 @@
 package com.whispersong.jetbrains.filedesc.listeners
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
@@ -10,6 +9,7 @@ import com.whispersong.jetbrains.filedesc.config.FileDescSettings
 import com.whispersong.jetbrains.filedesc.config.ProjectConfig
 import com.whispersong.jetbrains.filedesc.utils.CommentGenerator
 import com.whispersong.jetbrains.filedesc.utils.FileUtil
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 监听 VFS 内容变更事件，处理外部编辑器（如 AI 工具）修改文件后的 header 刷新。
@@ -21,6 +21,7 @@ import com.whispersong.jetbrains.filedesc.utils.FileUtil
  * updateHeader 是幂等的（newContent != content 才写入），与 FileSaveListener 不会冲突。
  */
 class FileContentChangeListener : BulkFileListener {
+    private val scheduledFiles = ConcurrentHashMap.newKeySet<String>()
 
     override fun after(events: MutableList<out VFileEvent>) {
         for (event in events) {
@@ -28,6 +29,7 @@ class FileContentChangeListener : BulkFileListener {
 
             val file = event.file
             if (file.isDirectory) continue
+            if (CommentGenerator.isInternalUpdate(file)) continue
 
             val state = FileDescSettings.getInstance()
             if (!state.changeUpdate) continue
@@ -38,13 +40,18 @@ class FileContentChangeListener : BulkFileListener {
             val ignorePaths = ProjectConfig.getMergedIgnorePaths(project)
             if (FileUtil.checkIsFileIgnored(file, ignorePaths)) continue
 
-            ApplicationManager.getApplication().invokeLater {
-                if (project.isDisposed) return@invokeLater
-                if (!file.isValid) return@invokeLater
+            if (!scheduledFiles.add(file.path)) continue
 
-                val document = FileDocumentManager.getInstance().getDocument(file) ?: return@invokeLater
-                WriteCommandAction.runWriteCommandAction(project) {
+            ApplicationManager.getApplication().invokeLater {
+                try {
+                    if (project.isDisposed) return@invokeLater
+                    if (!file.isValid) return@invokeLater
+                    if (CommentGenerator.isInternalUpdate(file)) return@invokeLater
+
+                    val document = FileDocumentManager.getInstance().getDocument(file) ?: return@invokeLater
                     CommentGenerator.updateHeader(document, file, project)
+                } finally {
+                    scheduledFiles.remove(file.path)
                 }
             }
         }

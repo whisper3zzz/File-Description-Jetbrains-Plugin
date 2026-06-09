@@ -26,10 +26,42 @@ object FileUtil {
 
     /** Cache compiled ignore regex patterns */
     private val ignoreRegexCache = ConcurrentHashMap<String, Regex>()
+    private val envFileRegex = Regex("\\.env(\\.[^.]+)?")
+
+    private val javascriptStyle = CommentStyle(
+        start = "/*\n", end = " */\n",
+        linePrefix = " * ", linePrefixRegex = " \\* ",
+        atSymbol = "@", startInsertAfter = ""
+    )
+    private val phpStyle = CommentStyle(
+        start = "/**\n", end = " */\n",
+        linePrefix = " * ", linePrefixRegex = " \\* ",
+        atSymbol = "@", startInsertAfter = "<?php\n"
+    )
+    private val htmlStyle = CommentStyle(
+        start = "<!--\n", end = " -->\n",
+        linePrefix = " * ", linePrefixRegex = " \\* ",
+        atSymbol = "@", startInsertAfter = ""
+    )
+    private val propertyStyle = CommentStyle(
+        start = "###\n", end = "###\n",
+        linePrefix = " # ", linePrefixRegex = " # ",
+        atSymbol = "@", startInsertAfter = ""
+    )
+    private val pythonStyle = CommentStyle(
+        start = "\"\"\"\n", end = "\"\"\"\n",
+        linePrefix = " ", linePrefixRegex = " ",
+        atSymbol = "", startInsertAfter = ""
+    )
+    private val dartStyle = CommentStyle(
+        start = null, end = null,
+        linePrefix = "/// ", linePrefixRegex = "/// ",
+        atSymbol = "", startInsertAfter = ""
+    )
 
     fun getFileExtension(file: VirtualFile): String {
         var ext = file.extension ?: ""
-        if (file.name.matches(Regex("\\.env(\\.[^.]+)?"))) {
+        if (envFileRegex.matches(file.name)) {
             ext = "env"
         }
         return ext.lowercase()
@@ -49,36 +81,12 @@ object FileUtil {
         }
 
         return when (commentType) {
-            "javascript" -> CommentStyle(
-                start = "/*\n", end = " */\n",
-                linePrefix = " * ", linePrefixRegex = " \\* ",
-                atSymbol = "@", startInsertAfter = ""
-            )
-            "php" -> CommentStyle(
-                start = "/**\n", end = " */\n",
-                linePrefix = " * ", linePrefixRegex = " \\* ",
-                atSymbol = "@", startInsertAfter = "<?php\n"
-            )
-            "html" -> CommentStyle(
-                start = "<!--\n", end = " -->\n",
-                linePrefix = " * ", linePrefixRegex = " \\* ",
-                atSymbol = "@", startInsertAfter = ""
-            )
-            "property" -> CommentStyle(
-                start = "###\n", end = "###\n",
-                linePrefix = " # ", linePrefixRegex = " # ",
-                atSymbol = "@", startInsertAfter = ""
-            )
-            "python" -> CommentStyle(
-                start = "\"\"\"\n", end = "\"\"\"\n",
-                linePrefix = " ", linePrefixRegex = " ",
-                atSymbol = "", startInsertAfter = ""
-            )
-            "dart" -> CommentStyle(
-                start = null, end = null,
-                linePrefix = "/// ", linePrefixRegex = "/// ",
-                atSymbol = "", startInsertAfter = ""
-            )
+            "javascript" -> javascriptStyle
+            "php" -> phpStyle
+            "html" -> htmlStyle
+            "property" -> propertyStyle
+            "python" -> pythonStyle
+            "dart" -> dartStyle
             else -> null
         }
     }
@@ -112,10 +120,14 @@ object FileUtil {
     }
 
     fun checkIsFileIgnored(file: VirtualFile, ignorePatterns: List<String>): Boolean {
+        if (ignorePatterns.isEmpty()) return false
         val filePath = getRelativePath(file)
         return ignorePatterns.any { pattern ->
-            val regex = ignoreRegexCache.getOrPut(pattern.trim()) {
-                pattern.trim()
+            val trimmedPattern = pattern.trim()
+            if (trimmedPattern.isEmpty()) return@any false
+
+            val regex = ignoreRegexCache.getOrPut(trimmedPattern) {
+                trimmedPattern
                     .replace(".", "\\.")
                     .replace("*", ".*")
                     .replace("?", ".")

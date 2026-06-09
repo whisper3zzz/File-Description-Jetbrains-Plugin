@@ -26,10 +26,12 @@ data class FileDescriptionRoot(
 object ProjectConfig {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val lineCommentRegex = Regex("//[^\n\r]+", RegexOption.MULTILINE)
 
     /** Cache project configs by project base path */
-    private val configCache = ConcurrentHashMap<String, FileHeaderConfig?>()
-    private var configCacheTime = mutableMapOf<String, Long>()
+    private data class CachedConfig(val value: FileHeaderConfig?, val loadedAt: Long)
+
+    private val configCache = ConcurrentHashMap<String, CachedConfig>()
     /** Cache TTL: 30 seconds */
     private const val CONFIG_CACHE_TTL = 30_000L
 
@@ -40,14 +42,14 @@ object ProjectConfig {
 
     fun loadProjectConfig(projectDir: Path): FileHeaderConfig? {
         val key = projectDir.toString()
-        val cachedTime = configCacheTime[key] ?: 0
-        if (System.currentTimeMillis() - cachedTime < CONFIG_CACHE_TTL) {
-            return configCache[key]
+        val now = System.currentTimeMillis()
+        val cached = configCache[key]
+        if (cached != null && now - cached.loadedAt < CONFIG_CACHE_TTL) {
+            return cached.value
         }
 
         val result = loadProjectConfigFromDisk(projectDir)
-        configCache[key] = result
-        configCacheTime[key] = System.currentTimeMillis()
+        configCache[key] = CachedConfig(result, now)
         return result
     }
 
@@ -66,13 +68,12 @@ object ProjectConfig {
     /** Clear project config cache, force reload on next access */
     fun clearCache() {
         configCache.clear()
-        configCacheTime.clear()
     }
 
     fun parseHeaderJson(jsonStr: String): JsonObject? {
         return try {
             val element = json.parseToJsonElement(
-                jsonStr.replace(Regex("//[^\n\r]+", RegexOption.MULTILINE), "").trim()
+                jsonStr.replace(lineCommentRegex, "").trim()
             )
             if (element is JsonObject) element else null
         } catch (e: Exception) {

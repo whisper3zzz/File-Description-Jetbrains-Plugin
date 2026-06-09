@@ -1,5 +1,6 @@
 package com.whispersong.jetbrains.filedesc.utils
 
+import com.intellij.openapi.application.ApplicationManager
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.file.Files
@@ -14,10 +15,37 @@ object VcsDetector {
     private val vcsCache = ConcurrentHashMap<String, VcsType>()
     private val usernameCache = ConcurrentHashMap<String, String>()
     private val usernameEmailCache = ConcurrentHashMap<String, String>()
+    private val warmingProjects = ConcurrentHashMap.newKeySet<String>()
+
+    private const val COMMAND_TIMEOUT_SECONDS = 2L
 
     fun detectVcs(projectDir: Path): VcsType {
-        return vcsCache.getOrPut(projectDir.toString()) {
+        return vcsCache.getOrPut(pathKey(projectDir)) {
             detectVcsInternal(projectDir)
+        }
+    }
+
+    fun getCachedVcs(projectDir: Path): VcsType? = vcsCache[pathKey(projectDir)]
+
+    fun getCachedVcsUsername(vcs: VcsType, projectDir: Path? = null): String? =
+        usernameCache[cacheKey(vcs, projectDir)]
+
+    fun getCachedVcsUsernameEmail(vcs: VcsType, projectDir: Path? = null): String? =
+        usernameEmailCache[cacheKey(vcs, projectDir)]
+
+    fun warmUp(projectDir: Path?) {
+        if (projectDir == null) return
+        val key = pathKey(projectDir)
+        if (!warmingProjects.add(key)) return
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val vcs = detectVcs(projectDir)
+                getVcsUsernameEmail(vcs, projectDir)
+                getVcsUsername(vcs, projectDir)
+            } finally {
+                warmingProjects.remove(key)
+            }
         }
     }
 
@@ -61,21 +89,21 @@ object VcsDetector {
     private fun detectVcsInternal(projectDir: Path): VcsType {
         if (Files.isDirectory(projectDir.resolve(".git"))) return VcsType.GIT
         if (Files.isDirectory(projectDir.resolve(".svn"))) return VcsType.SVN
-        if (runCommand(projectDir, "p4", "info") != null) return VcsType.P4
+        if (runCommand(projectDir, listOf("p4", "info")) != null) return VcsType.P4
         return VcsType.NONE
     }
 
     private fun getGitUsername(projectDir: Path?): String? =
-        runCommand(projectDir, "git", "config", "user.name")
+        runCommand(projectDir, listOf("git", "config", "user.name"))
 
     private fun getGitUsernameEmail(projectDir: Path?): String? {
-        val name = runCommand(projectDir, "git", "config", "user.name") ?: return null
-        val email = runCommand(projectDir, "git", "config", "user.email")
+        val name = runCommand(projectDir, listOf("git", "config", "user.name")) ?: return null
+        val email = runCommand(projectDir, listOf("git", "config", "user.email"))
         return if (email != null) "$name $email" else name
     }
 
     private fun getSvnUsername(projectDir: Path?): String? {
-        val info = runCommand(projectDir, "svn", "info") ?: return null
+        val info = runCommand(projectDir, listOf("svn", "info")) ?: return null
         for (line in info.lines()) {
             if (line.startsWith("Last Changed Author:")) {
                 return line.substringAfter(":").trim()
@@ -85,7 +113,7 @@ object VcsDetector {
     }
 
     private fun getP4Username(projectDir: Path?): String? {
-        val info = runCommand(projectDir, "p4", "info") ?: return null
+        val info = runCommand(projectDir, listOf("p4", "info")) ?: return null
         for (line in info.lines()) {
             if (line.startsWith("User name:")) {
                 return line.substringAfter(":").trim()
@@ -98,25 +126,33 @@ object VcsDetector {
         System.getenv("USERNAME") ?: System.getenv("USER")
 
     private fun cacheKey(vcs: VcsType, projectDir: Path?): String {
-        val path = projectDir?.toAbsolutePath()?.normalize()?.toString() ?: "<global>"
+        val path = projectDir?.let(::pathKey) ?: "<global>"
         return "$path|$vcs"
     }
 
-    private fun runCommand(projectDir: Path?, vararg command: String): String? {
+    private fun pathKey(projectDir: Path): String =
+        projectDir.toAbsolutePath().normalize().toString()
+
+    fun runCommand(
+        projectDir: Path?,
+        command: List<String>,
+        timeoutSeconds: Long = COMMAND_TIMEOUT_SECONDS
+    ): String? {
+        if (command.isEmpty()) return null
         return try {
-            val processBuilder = ProcessBuilder(*command)
+            val processBuilder = ProcessBuilder(command)
             if (projectDir != null && Files.isDirectory(projectDir)) {
                 processBuilder.directory(projectDir.toFile())
             }
             processBuilder.redirectErrorStream(true)
             val process = processBuilder.start()
-            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
                 return null
             }
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val output = reader.readText().trim()
-            reader.close()
+            val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                reader.readText().trim()
+            }
             if (output.isEmpty() || process.exitValue() != 0) null else output
         } catch (e: Exception) {
             null
