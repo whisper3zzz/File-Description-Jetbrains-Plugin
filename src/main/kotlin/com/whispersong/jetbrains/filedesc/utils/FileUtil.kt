@@ -1,0 +1,133 @@
+package com.whispersong.jetbrains.filedesc.utils
+
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.vfs.VirtualFile
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
+
+object FileUtil {
+
+    data class CommentStyle(
+        val start: String?,
+        val end: String?,
+        val linePrefix: String,
+        val linePrefixRegex: String,
+        val atSymbol: String,
+        val startInsertAfter: String = ""
+    )
+
+    /** Cache compiled ignore regex patterns */
+    private val ignoreRegexCache = ConcurrentHashMap<String, Regex>()
+
+    fun getFileExtension(file: VirtualFile): String {
+        var ext = file.extension ?: ""
+        if (file.name.matches(Regex("\\.env(\\.[^.]+)?"))) {
+            ext = "env"
+        }
+        return ext.lowercase()
+    }
+
+    fun getCommentStyle(file: VirtualFile): CommentStyle? {
+        val ext = getFileExtension(file)
+        val commentType = when (ext) {
+            "env", "yml" -> "property"
+            "java", "kt", "css", "scss", "less", "ts", "tsx", "js", "jsx",
+            "mjs", "mts", "cjs", "cts", "go", "cpp", "c", "hpp", "h", "cu", "cuh" -> "javascript"
+            "php" -> "php"
+            "html", "vue" -> "html"
+            "py", "pyw", "pyi", "pxd", "pxi", "pyx" -> "python"
+            "dart" -> "dart"
+            else -> return null
+        }
+
+        return when (commentType) {
+            "javascript" -> CommentStyle(
+                start = "/*\n", end = " */\n",
+                linePrefix = " * ", linePrefixRegex = " \\* ",
+                atSymbol = "@", startInsertAfter = ""
+            )
+            "php" -> CommentStyle(
+                start = "/**\n", end = " */\n",
+                linePrefix = " * ", linePrefixRegex = " \\* ",
+                atSymbol = "@", startInsertAfter = "<?php\n"
+            )
+            "html" -> CommentStyle(
+                start = "<!--\n", end = " -->\n",
+                linePrefix = " * ", linePrefixRegex = " \\* ",
+                atSymbol = "@", startInsertAfter = ""
+            )
+            "property" -> CommentStyle(
+                start = "###\n", end = "###\n",
+                linePrefix = " # ", linePrefixRegex = " # ",
+                atSymbol = "@", startInsertAfter = ""
+            )
+            "python" -> CommentStyle(
+                start = "\"\"\"\n", end = "\"\"\"\n",
+                linePrefix = " ", linePrefixRegex = " ",
+                atSymbol = "", startInsertAfter = ""
+            )
+            "dart" -> CommentStyle(
+                start = null, end = null,
+                linePrefix = "/// ", linePrefixRegex = "/// ",
+                atSymbol = "", startInsertAfter = ""
+            )
+            else -> null
+        }
+    }
+
+    fun isSupportedFile(file: VirtualFile): Boolean = getCommentStyle(file) != null
+
+    fun findProjectForFile(file: VirtualFile): Project? {
+        val projects = ProjectManager.getInstance().openProjects
+        for (project in projects) {
+            if (project.basePath != null && file.path.startsWith(project.basePath!!)) {
+                return project
+            }
+        }
+        return null
+    }
+
+    fun getRelativePath(file: VirtualFile): String {
+        val project = findProjectForFile(file) ?: return file.path
+        val basePath = project.basePath ?: return file.path
+        val baseDir = LocalFileSystem.getInstance().findFileByPath(basePath)
+        return VfsUtilCore.getRelativePath(file, baseDir as VirtualFile) ?: file.path
+    }
+
+    fun getFileCreationTime(virtualFile: VirtualFile, timeFormat: String): String {
+        val path = Path.of(virtualFile.path)
+        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+        val creationTime = attributes.creationTime().toInstant()
+        val formatter = DateTimeFormatter.ofPattern(timeFormat)
+        val localDateTime = LocalDateTime.ofInstant(creationTime, ZoneId.systemDefault())
+        return formatter.format(localDateTime)
+    }
+
+    fun checkIsFileIgnored(file: VirtualFile, ignorePatterns: List<String>): Boolean {
+        val filePath = getRelativePath(file)
+        return ignorePatterns.any { pattern ->
+            val regex = ignoreRegexCache.getOrPut(pattern.trim()) {
+                pattern.trim()
+                    .replace(".", "\\.")
+                    .replace("*", ".*")
+                    .replace("?", ".")
+                    .toRegex()
+            }
+            regex.matches(filePath)
+        }
+    }
+
+    fun getProjectDir(file: VirtualFile): Path? {
+        val project = findProjectForFile(file) ?: return null
+        val basePath = project.basePath ?: return null
+        return Path.of(basePath)
+    }
+}

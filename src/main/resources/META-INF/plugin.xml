@@ -1,0 +1,51 @@
+<idea-plugin>
+    <id>com.whispersong.jetbrains.file_description_plugin_v2</id>
+    <name>File Description</name>
+    <vendor>whispersong</vendor>
+    <description><![CDATA[
+    自动添加和更新文件头部注释。
+    支持 Git/SVN/P4 用户名自动检测。
+    兼容 koroFileHeader 配置格式。
+    支持项目级 .fileDescription.json 配置文件。
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                displayName="File Description"
+                parentId="tools"
+                id="com.whispersong.jetbrains.filedesc.config.FileDescSettingsConfigurable"
+                instance="com.whispersong.jetbrains.filedesc.config.FileDescSettingsConfigurable"/>
+        <applicationService
+                serviceImplementation="com.whispersong.jetbrains.filedesc.config.FileDescSettings"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener
+                class="com.whispersong.jetbrains.filedesc.listeners.FileCreateListener"
+                topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+        <listener
+                class="com.whispersong.jetbrains.filedesc.listeners.FileContentChangeListener"
+                topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+        <listener
+                class="com.whispersong.jetbrains.filedesc.listeners.FileSaveListener"
+                topic="com.intellij.openapi.fileEditor.FileDocumentManagerListener"/>
+    </applicationListeners>
+
+    <actions>
+        <group id="FileDescription.Actions" popup="true" text="File Description">
+            <!-- Editor right-click menu -->
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <!-- Project tree right-click menu -->
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <action
+                    class="com.whispersong.jetbrains.filedesc.actions.GenerateHeaderAction"
+                    id="com.whispersong.jetbrains.filedesc.actions.GenerateHeaderAction"
+                    text="生成文件头部注释"
+                    description="插入或更新文件头部注释">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt I"/>
+            </action>
+        </group>
+    </actions>
+</idea-plugin>
