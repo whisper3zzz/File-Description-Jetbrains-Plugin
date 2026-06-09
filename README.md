@@ -247,6 +247,28 @@ Settings / Preferences -> Plugins -> Install Plugin from Disk...
 
 选择 `build/distributions/` 下生成的插件压缩包，安装后重启 IDE。
 
+## GitHub Actions 打包
+
+仓库已配置自动打包流程：
+
+- push 到 `main`：编译、校验插件配置并执行 `buildPlugin`。
+- pull request 到 `main`：执行同样的编译和打包校验。
+- 手动触发 `Build Plugin` workflow：生成插件压缩包。
+- 推送 `v*` 标签：生成插件压缩包，并自动创建 GitHub Release。
+
+打包产物会上传到 workflow artifact，文件来自：
+
+```text
+build/distributions/*.zip
+```
+
+发布新版本示例：
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## 仓库结构
 
 ```text
