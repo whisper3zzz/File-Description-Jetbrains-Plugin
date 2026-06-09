@@ -99,7 +99,7 @@ node_modules/*
 
 ```json
 {
-  "Copyright": "${now_year} Tencent Inc. Allrights reserved.",
+  "Copyright": "Copyright (c) ${now_year} ${git_name}. All rights reserved.",
   "Author": "auto:vcs",
   "Date": "",
   "LastEditors": "auto:vcs",
@@ -259,4 +259,3 @@ src/main/kotlin/com/whispersong/jetbrains/filedesc/
 src/main/resources/META-INF/plugin.xml
   插件声明、菜单动作、监听器和设置页注册
 ```
-

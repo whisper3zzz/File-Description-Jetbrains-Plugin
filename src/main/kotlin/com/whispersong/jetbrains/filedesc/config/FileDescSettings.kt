@@ -32,6 +32,6 @@ class FileDescSettings : PersistentStateComponent<FileDescSettings> {
             return ApplicationManager.getApplication().getService(FileDescSettings::class.java)
         }
 
-        val DEFAULT_HEADER = """{"Copyright":"${'$'}{now_year} Tencent Inc. Allrights reserved.","Author":"auto:vcs","Date":"","LastEditors":"auto:vcs","LastEditTime":"","FilePath":"","Description":""}"""
+        val DEFAULT_HEADER = """{"Copyright":"Copyright (c) ${'$'}{now_year} ${'$'}{git_name}. All rights reserved.","Author":"auto:vcs","Date":"","LastEditors":"auto:vcs","LastEditTime":"","FilePath":"","Description":""}"""
     }
 }
