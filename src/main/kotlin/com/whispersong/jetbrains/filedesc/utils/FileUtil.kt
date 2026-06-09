@@ -28,7 +28,12 @@ object FileUtil {
     private val ignoreRegexCache = ConcurrentHashMap<String, Regex>()
     private val envFileRegex = Regex("\\.env(\\.[^.]+)?")
 
-    private val javascriptStyle = CommentStyle(
+    private val blockStyle = CommentStyle(
+        start = "/**\n", end = " */\n",
+        linePrefix = " * ", linePrefixRegex = " \\* ",
+        atSymbol = "@", startInsertAfter = ""
+    )
+    private val compactBlockStyle = CommentStyle(
         start = "/*\n", end = " */\n",
         linePrefix = " * ", linePrefixRegex = " \\* ",
         atSymbol = "@", startInsertAfter = ""
@@ -67,8 +72,11 @@ object FileUtil {
         return ext.lowercase()
     }
 
-    fun getCommentStyle(file: VirtualFile): CommentStyle? {
-        val ext = getFileExtension(file)
+    fun getCommentStyle(file: VirtualFile, compactComment: Boolean = false): CommentStyle? =
+        getCommentStyle(file.name, file.extension, compactComment)
+
+    fun getCommentStyle(fileName: String, extension: String?, compactComment: Boolean = false): CommentStyle? {
+        val ext = getFileExtension(fileName, extension)
         val commentType = when (ext) {
             "env", "yml" -> "property"
             "java", "kt", "css", "scss", "less", "ts", "tsx", "js", "jsx",
@@ -81,8 +89,8 @@ object FileUtil {
         }
 
         return when (commentType) {
-            "javascript" -> javascriptStyle
-            "php" -> phpStyle
+            "javascript" -> if (compactComment) compactBlockStyle else blockStyle
+            "php" -> if (compactComment) compactBlockStyle else phpStyle
             "html" -> htmlStyle
             "property" -> propertyStyle
             "python" -> pythonStyle
@@ -92,6 +100,14 @@ object FileUtil {
     }
 
     fun isSupportedFile(file: VirtualFile): Boolean = getCommentStyle(file) != null
+
+    fun getFileExtension(fileName: String, extension: String?): String {
+        var ext = extension ?: ""
+        if (envFileRegex.matches(fileName)) {
+            ext = "env"
+        }
+        return ext.lowercase()
+    }
 
     fun findProjectForFile(file: VirtualFile): Project? {
         val projects = ProjectManager.getInstance().openProjects

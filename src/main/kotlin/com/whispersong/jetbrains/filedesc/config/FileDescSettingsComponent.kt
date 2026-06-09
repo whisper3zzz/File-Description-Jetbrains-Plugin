@@ -10,8 +10,11 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.whispersong.jetbrains.filedesc.utils.VcsDetector
 import java.awt.FlowLayout
+import java.awt.Font
 import javax.swing.JButton
 import javax.swing.JPanel
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 
 class FileDescSettingsComponent {
     private val state = FileDescSettings.getInstance()
@@ -24,6 +27,7 @@ class FileDescSettingsComponent {
     private val timeFormat = JBTextArea(state.timeFormat)
     private val customHeaderComment = JBTextArea(state.customHeaderComment)
     private val manualAuthor = JBTextArea(state.manualAuthor)
+    private val preview = JBTextArea()
 
     private val refreshVcsBtn = JButton("刷新 VCS 缓存").apply {
         addActionListener {
@@ -57,6 +61,12 @@ class FileDescSettingsComponent {
         customHeaderComment.lineWrap = true
         ignorePaths.wrapStyleWord = true
         ignorePaths.lineWrap = true
+        preview.isEditable = false
+        preview.wrapStyleWord = false
+        preview.lineWrap = false
+        preview.font = Font(Font.MONOSPACED, Font.PLAIN, preview.font.size)
+        installPreviewListeners()
+        updatePreview()
     }
 
     private val vcsButtonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply {
@@ -81,6 +91,8 @@ class FileDescSettingsComponent {
         .addComponent(TitledSeparator("头部注释配置"))
         .addLabeledComponentFillVertically("自定义头部注释（JSON）", customHeaderComment)
         .addComponent(makeDescription("JSON 格式，兼容 koroFileHeader 配置。使用 \"auto:vcs\" 自动从版本控制获取用户名"))
+        .addLabeledComponentFillVertically("模板预览", preview)
+        .addComponent(makeDescription("预览使用 Example.kt、示例路径和示例邮箱，不会执行 Git 命令"))
         .addComponentFillVertically(JPanel(), 0)
         .setAlignLabelOnRight(true)
         .panel
@@ -117,6 +129,7 @@ class FileDescSettingsComponent {
         state.timeFormat = timeFormat.text
         state.customHeaderComment = customHeaderComment.text
         state.manualAuthor = manualAuthor.text
+        ProjectConfig.clearCache()
     }
 
     fun reset() {
@@ -128,11 +141,33 @@ class FileDescSettingsComponent {
         timeFormat.text = state.timeFormat
         customHeaderComment.text = state.customHeaderComment
         manualAuthor.text = state.manualAuthor
+        updatePreview()
     }
 
     private fun findFirstOpenProjectDir(): java.nio.file.Path? {
         val projects = com.intellij.openapi.project.ProjectManager.getInstance().openProjects
         val basePath = projects.firstOrNull { it.basePath != null }?.basePath ?: return null
         return java.nio.file.Path.of(basePath)
+    }
+
+    private fun installPreviewListeners() {
+        val listener = object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent) = updatePreview()
+            override fun removeUpdate(e: DocumentEvent) = updatePreview()
+            override fun changedUpdate(e: DocumentEvent) = updatePreview()
+        }
+        customHeaderComment.document.addDocumentListener(listener)
+        timeFormat.document.addDocumentListener(listener)
+        manualAuthor.document.addDocumentListener(listener)
+        compactComment.addActionListener { updatePreview() }
+    }
+
+    private fun updatePreview() {
+        preview.text = HeaderPreviewGenerator.generate(
+            headerJson = customHeaderComment.text,
+            timeFormat = timeFormat.text,
+            manualAuthor = manualAuthor.text,
+            compactComment = compactComment.isSelected
+        )
     }
 }

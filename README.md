@@ -40,6 +40,8 @@ File Description 是一个 JetBrains IDE 插件，用于自动插入和更新文
 
 默认配置下，创建支持的文件类型时会自动插入头部注释。
 
+启用“打开文件时检测并添加注释”后，打开支持的文件类型时，如果文件还没有头部注释，插件会自动插入。
+
 保存文件时，插件会自动更新已有头部注释中的：
 
 - `LastEditors`
@@ -77,13 +79,14 @@ Settings / Preferences -> Tools -> File Description
 | 配置 | 说明 |
 | --- | --- |
 | 创建文件时添加注释 | 新建支持的文件时自动插入头部注释 |
-| 打开文件时检测并添加注释 | 保留配置项，当前实现中未绑定打开文件监听 |
+| 打开文件时检测并添加注释 | 打开支持的文件时，如果没有头部注释则自动插入 |
 | 保存时自动更新 | 保存文件或检测到外部内容变更时更新已有头部注释 |
-| 注释开始简短模式 | 保留配置项，当前生成逻辑未使用该配置 |
+| 注释开始简短模式 | 对块注释文件使用 `/*` 开头；关闭时使用 `/**` 开头 |
 | 忽略路径 | 一行一条或逗号分隔，支持 `*` 和 `?` 通配符 |
 | 时间格式 | Java 时间格式，例如 `yyyy-MM-dd HH:mm:ss` |
 | 手动指定作者 | 非空时覆盖 VCS 自动检测用户 |
 | 自定义头部注释 | JSON 格式，定义要生成的头部字段 |
+| 模板预览 | 使用示例文件和示例用户信息预览当前模板输出 |
 | 刷新 VCS 缓存 | 清除 VCS 和项目配置缓存，重新检测用户信息 |
 
 默认忽略路径：
@@ -179,7 +182,7 @@ Description
 TypeScript 文件示例：
 
 ```ts
-/*
+/**
  * @Copyright: Copyright 2026 whisper3zzz <user@example.com>
  * @Author: whisper3zzz <user@example.com>
  * @Date: 2026-06-09 14:30:00
@@ -219,6 +222,12 @@ Python 文件示例：
 .\gradlew.bat compileKotlin
 ```
 
+运行单元测试：
+
+```powershell
+.\gradlew.bat test
+```
+
 校验插件配置：
 
 ```powershell
@@ -251,8 +260,8 @@ Settings / Preferences -> Plugins -> Install Plugin from Disk...
 
 仓库已配置自动打包流程：
 
-- push 到 `main`：编译、校验插件配置并执行 `buildPlugin`。
-- pull request 到 `main`：执行同样的编译和打包校验。
+- push 到 `main`：编译、运行测试、校验插件配置并执行 `buildPlugin`。
+- pull request 到 `main`：执行同样的测试、编译和打包校验。
 - 手动触发 `Build Plugin` workflow：生成插件压缩包。
 - 推送 `v*` 标签：生成插件压缩包，并自动创建 GitHub Release。
 

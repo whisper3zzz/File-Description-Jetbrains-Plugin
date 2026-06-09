@@ -38,6 +38,9 @@ jobs:
       - name: Compile Kotlin
         run: ./gradlew compileKotlin
 
+      - name: Run tests
+        run: ./gradlew test
+
       - name: Verify plugin configuration
         run: ./gradlew verifyPluginConfiguration
 

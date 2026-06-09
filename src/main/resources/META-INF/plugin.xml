@@ -33,6 +33,12 @@
                 topic="com.intellij.openapi.fileEditor.FileDocumentManagerListener"/>
     </applicationListeners>
 
+    <projectListeners>
+        <listener
+                class="com.whispersong.jetbrains.filedesc.listeners.FileOpenListener"
+                topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
+    </projectListeners>
+
     <actions>
         <group id="FileDescription.Actions" popup="true" text="File Description">
             <!-- Editor right-click menu -->

@@ -36,7 +36,7 @@ object CommentGenerator {
     }
 
     fun generateHeaderComment(file: VirtualFile, project: Project?): String {
-        val style = FileUtil.getCommentStyle(file) ?: return ""
+        val style = FileUtil.getCommentStyle(file, ProjectConfig.getMergedCompactComment(project)) ?: return ""
         val config = ProjectConfig.getMergedHeaderConfig(project)
         val timeFormat = ProjectConfig.getMergedTimeFormat(project)
         val copyrightField = ProjectConfig.getMergedCopyright(project)
@@ -127,7 +127,7 @@ object CommentGenerator {
 
     fun updateHeader(document: Document, file: VirtualFile, project: Project?) {
         val content = getHeaderScanText(document)
-        val style = FileUtil.getCommentStyle(file) ?: return
+        val style = FileUtil.getCommentStyle(file, ProjectConfig.getMergedCompactComment(project)) ?: return
         val headerRange = findHeaderRange(file, content) ?: return
 
         val config = ProjectConfig.getMergedHeaderConfig(project)
@@ -172,8 +172,7 @@ object CommentGenerator {
             return findLineCommentHeaderRange(content, headerStart, style)
         }
 
-        val startToken = style.start.trim()
-        if (!content.regionMatches(headerStart, startToken, 0, startToken.length)) return null
+        val startToken = findMatchingStartToken(content, headerStart, style) ?: return null
 
         val endToken = style.end.trim()
         val endIndex = content.indexOf(endToken, headerStart + startToken.length)
@@ -181,6 +180,23 @@ object CommentGenerator {
 
         val rangeEnd = consumeLineBreak(content, endIndex + endToken.length)
         return TextRange(headerStart, rangeEnd)
+    }
+
+    private fun findMatchingStartToken(content: String, headerStart: Int, style: FileUtil.CommentStyle): String? {
+        val startToken = style.start?.trim() ?: return null
+        if (content.regionMatches(headerStart, startToken, 0, startToken.length)) return startToken
+
+        val alternateToken = when (startToken) {
+            "/**" -> "/*"
+            "/*" -> "/**"
+            else -> null
+        } ?: return null
+
+        return if (content.regionMatches(headerStart, alternateToken, 0, alternateToken.length)) {
+            alternateToken
+        } else {
+            null
+        }
     }
 
     private fun findLineCommentHeaderRange(
